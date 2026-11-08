@@ -1,0 +1,9 @@
+import {sb,configured,$,authUser,isTeacher,errorText} from './supabase-client.js';
+const status=document.getElementById('cloudStatus'),chooser=document.getElementById('cloudClass'),save=document.getElementById('cloudSave');
+let summary=null,allowed=false;
+function msg(v){status.textContent=v;}
+async function init(){if(!configured){msg('離線模式：設定 supabase-config.js 後可儲存班級成績。');return;}try{const u=await authUser();if(u){const res=await sb.from('nature_questions').select('id,unit,difficulty,topic,question,options,answer,explanation').eq('is_active',true).limit(1000);if(!res.error)window.dispatchEvent(new CustomEvent('nature:cloud-questions',{detail:res.data||[]}));}allowed=Boolean(u&&await isTeacher());if(!allowed){msg('若要保存班級成績，請先到「老師管理」登入。');return;}const {data,error}=await sb.from('nature_classes').select('id,name').order('name');if(error)throw error;chooser.replaceChildren(new Option('選擇成績所屬班級',''));(data||[]).forEach(c=>chooser.add(new Option(c.name,c.id)));chooser.disabled=false;msg('已連接 Supabase；競賽結束後可將四人分數儲存到班級。');}catch(e){msg(errorText(e));}}
+window.addEventListener('nature:game-finished',e=>{summary=e.detail;save.disabled=!allowed||!chooser.value;});
+chooser.addEventListener('change',()=>save.disabled=!allowed||!chooser.value||!summary);
+save.onclick=async()=>{if(!summary||!allowed||!chooser.value)return;save.disabled=true;try{const u=await authUser();const payload=summary.players.map((p,i)=>({class_id:chooser.value,mode:'group',user_id:u.id,display_name:p.name,score:p.score,correct_count:p.correct,question_count:summary.questionCount,details:summary.history.map(h=>({question_id:h.id,selected:h.answers[i],points:h.points[i]}))}));const {error}=await sb.from('nature_sessions').insert(payload);if(error)throw error;msg('✅ 本次四人競賽成績已保存到 Supabase！');save.textContent='✅ 已儲存';}catch(e){msg('儲存失敗：'+errorText(e));save.disabled=false;}};
+init();
